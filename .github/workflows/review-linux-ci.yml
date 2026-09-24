@@ -36,6 +36,7 @@ jobs:
       version: ${{ matrix.version }}
       artifact_name: linux-packages-${{ matrix.channel }}
       release_signing: false
+      runner: ubuntu-24.04
 
   ubuntu-desktop:
     name: Ubuntu desktop, AppArmor and channel coexistence
