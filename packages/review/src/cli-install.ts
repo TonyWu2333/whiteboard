@@ -37,6 +37,7 @@ import { isDirectory, isFile } from "./fs-utils";
 import { removeLegacySkills, scanLegacySkills } from "./legacy-skills";
 import { readReviewPackageVersion } from "./package-paths";
 import { reviewDesktopStateDir } from "./review-home-paths";
+import { updateWindowsUserPath, windowsCliShim } from "./windows-cli";
 
 const installErrors = new Map<string, string>();
 
@@ -79,7 +80,12 @@ export function cliInstallUpdateMarkerPath(
 }
 
 export function pathShimPath(homeDir = os.homedir()): string {
-  return path.join(homeDir, ".local", "bin", "whiteboard");
+  return path.join(
+    homeDir,
+    ".local",
+    "bin",
+    process.platform === "win32" ? "whiteboard.cmd" : "whiteboard",
+  );
 }
 
 export async function resolveCliInstallStatus(input: {
@@ -483,6 +489,13 @@ async function removeCliInstallUnlocked(
 
     if (contents.includes(SHIM_MARKER)) {
       await rm(shimPath, { force: true });
+
+      if (process.platform === "win32") {
+        const bashShim = shimPath.replace(/\.cmd$/i, "");
+
+        if (await isOwnedShim(bashShim)) await rm(bashShim, { force: true });
+      }
+
       chunks.push(`[ok] removed whiteboard command ${shimPath}\n`);
     } else if (contents) {
       chunks.push(
@@ -583,6 +596,17 @@ export async function writePathShim(
   runtimePath: string | undefined,
   devHome: string,
 ): Promise<void> {
+  if (process.platform === "win32") {
+    await writeFileAtomicAsync(
+      shimPath,
+      windowsCliShim(cliPath, runtimePath ?? process.execPath, devHome),
+      { replaceSymlink: true },
+    );
+
+    // Git Bash and agent plugins use the POSIX launcher beside the .cmd file.
+    shimPath = shimPath.replace(/\.cmd$/i, "");
+  }
+
   const source = `#!/bin/sh
 # Managed by Whiteboard Desktop ("Review: Install CLI in PATH"). Do not edit.
 FALLBACK_CLI=${shSingleQuote(cliPath)}
@@ -750,6 +774,12 @@ export async function ensureShellProfilePath(input: {
 
   if (pathContainsDirectory(input.env.PATH, shimDirectory)) return "";
 
+  if (process.platform === "win32") {
+    await updateWindowsUserPath(shimDirectory);
+
+    return `[ok] added ${shimDirectory} to your user PATH; open a new terminal\n`;
+  }
+
   const shell = path.basename(input.env.SHELL?.trim() ?? "");
   let profileName: (typeof SHELL_PROFILE_NAMES)[number] | undefined;
 
@@ -781,6 +811,12 @@ export async function ensureShellProfilePath(input: {
 export async function removeShellProfilePath(
   homeDir: string,
 ): Promise<string[]> {
+  if (process.platform === "win32") {
+    await updateWindowsUserPath(path.dirname(pathShimPath(homeDir)), true);
+
+    return ["user PATH"];
+  }
+
   const removed: string[] = [];
 
   for (const profileName of SHELL_PROFILE_NAMES) {
