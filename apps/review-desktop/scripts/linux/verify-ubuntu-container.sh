@@ -12,7 +12,20 @@ install -m 0644 "/publication/repos/keys/$FINGERPRINT.asc" /etc/apt/keyrings/rev
 # HTTP also exercises APT's by-hash requests and package checksums.
 python3 -m http.server 8765 --bind 127.0.0.1 --directory /repo >/tmp/apt-http.log 2>&1 &
 HTTP_PID=$!
-trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
+trap 'cat /tmp/apt-http.log; kill "$HTTP_PID" 2>/dev/null || true' EXIT
+# Fail with the server log instead of an opaque APT connection error.
+python3 - <<'READY'
+import time
+import urllib.request
+for attempt in range(50):
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8765/", timeout=1).close()
+        break
+    except OSError:
+        time.sleep(0.1)
+else:
+    raise RuntimeError("APT test server did not start")
+READY
 cat > /etc/apt/sources.list.d/review-test.sources <<SOURCES
 Types: deb
 URIs: http://127.0.0.1:8765

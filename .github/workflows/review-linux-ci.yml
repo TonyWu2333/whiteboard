@@ -41,6 +41,8 @@ jobs:
   ubuntu-desktop:
     name: Ubuntu desktop, AppArmor and channel coexistence
     needs: packages
+    # Keep the native AppArmor check independent of container validation.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
